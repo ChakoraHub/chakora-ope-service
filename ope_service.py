@@ -6,9 +6,11 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from pathlib import Path
+import secrets
 from typing import List, Optional, Dict, Any
 
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, ConfigDict
 from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, DateTime, text, event, func, Boolean
@@ -46,6 +48,46 @@ app.add_middleware(
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
+
+# ================================================================
+# MAINTENANCE MODE ENGINE (Standardized across ChakoraHub services)
+# ================================================================
+MAINTENANCE_FLAG = Path(
+    os.getenv(
+        "MAINTENANCE_FLAG",
+        "/home/ec2-user/ope-maintenance.flag"
+    )
+)
+MAINTENANCE_TOKEN = os.getenv("MAINTENANCE_TOKEN")
+
+def is_maintenance_enabled() -> bool:
+    return MAINTENANCE_FLAG.exists()
+
+@app.get("/ope/maintenance/status")
+@app.get("/maintenance/status")
+def maintenance_status():
+    return {"maintenance_mode": is_maintenance_enabled()}
+
+def verify_maintenance_token(request: Request):
+    supplied_token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    if not MAINTENANCE_TOKEN or not secrets.compare_digest(supplied_token, MAINTENANCE_TOKEN):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+@app.post("/admin/maintenance/on")
+@app.post("/api/admin/maintenance/on")
+def enable_maintenance(request: Request):
+    verify_maintenance_token(request)
+    MAINTENANCE_FLAG.parent.mkdir(parents=True, exist_ok=True)
+    MAINTENANCE_FLAG.touch()
+    return {"success": True, "maintenance_mode": True}
+
+@app.post("/admin/maintenance/off")
+@app.post("/api/admin/maintenance/off")
+def disable_maintenance(request: Request):
+    verify_maintenance_token(request)
+    MAINTENANCE_FLAG.unlink(missing_ok=True)
+    return {"success": True, "maintenance_mode": False}
+
 
 # -------------------------------------------------------------
 # Startup AWS Credential Validation
