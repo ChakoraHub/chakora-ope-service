@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - 'feature/**'
     paths:
       - 'Dockerfile'
       - 'ope_service.py'
@@ -41,3 +42,4 @@ jobs:
           tags: |
             ghcr.io/chakorahub/ope-service:v1
             ghcr.io/chakorahub/ope-service:latest
+
